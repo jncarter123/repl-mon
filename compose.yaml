@@ -6,7 +6,10 @@ name: repl-monitor
 x-app: &app
   build:
     context: .
-  image: repl-monitor:latest
+  # What `docker compose build` writes locally. On a server, point this at the
+  # published image instead — REPL_MONITOR_IMAGE=<namespace>/repl-monitor:<tag>
+  # in a .env beside this file — and pull rather than build.
+  image: ${REPL_MONITOR_IMAGE:-repl-monitor:latest}
   env_file:
     - docker.env
   environment:

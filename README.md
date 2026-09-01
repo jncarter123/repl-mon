@@ -120,6 +120,35 @@ measurement is "write here, read *there*", and a read that MaxScale routes to
 whichever backend it likes — including the primary — measures nothing. Router
 ports are the one place these credentials should not go.
 
+### Publishing the image
+
+`.github/workflows/docker.yml` builds and pushes to Docker Hub. It needs one
+secret on the repository, `DOCKERHUB_TOKEN` — a Docker Hub access token with
+read/write — and a `DOCKERHUB_USERNAME` variable if your Hub namespace is not
+the GitHub owner's name.
+
+```bash
+git tag v0.1.0 && git push origin v0.1.0   # publishes 0.1.0, 0.1, latest
+```
+
+Or run the workflow by hand from the Actions tab to publish the current commit,
+optionally under a name like `edge`. Either way the commit SHA is always one of
+the tags, so a running container can be traced back to a line of code.
+
+It builds `linux/amd64` only, because that is what the MaxScale host is. The
+`platforms:` line in the workflow takes `linux/arm64` as well if you want to
+pull the same image onto an Apple Silicon machine.
+
+On the server, then, there is nothing to build:
+
+```bash
+echo "REPL_MONITOR_IMAGE=<namespace>/repl-monitor:0.1.0" > .env   # beside compose.yaml
+docker compose pull && docker compose up -d
+```
+
+Nothing secret is baked into the image: `.env` and `docker.env` are both in
+`.dockerignore`, and the `APP_KEY` is generated on the volume at run time.
+
 ### Day to day
 
 ```bash
