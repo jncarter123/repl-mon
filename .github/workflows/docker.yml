@@ -71,5 +71,11 @@ jobs:
           platforms: linux/amd64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          # Composer pulls most of the tree from api.github.com zipballs.
+          # Anonymous requests from a shared runner IP are the first thing to
+          # get a 504, and one is enough to fail the build. GITHUB_TOKEN costs
+          # nothing and is read-only; `contents: read` above is all it needs.
+          secrets: |
+            composer_auth={"github-oauth":{"github.com":"${{ secrets.GITHUB_TOKEN }}"}}
           cache-from: type=gha
           cache-to: type=gha,mode=max

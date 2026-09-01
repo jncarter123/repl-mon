@@ -26,8 +26,22 @@ RUN apk add --no-cache git unzip
 
 # Dependencies first, so a code-only change does not re-resolve the tree.
 COPY composer.json composer.lock ./
-RUN composer install --no-dev --no-interaction --no-progress --prefer-dist \
-        --no-scripts --no-autoloader
+
+# Two things here are about surviving a bad day at github.com rather than about
+# the build itself:
+#
+#   `--prefer-install=auto` keeps dist archives as the fast path but lets a
+#   package that will not download fall back to a git clone. `--prefer-dist`
+#   turns that fallback off, so one HTTP 504 on an api.github.com zipball fails
+#   the whole image.
+#
+#   COMPOSER_AUTH, when the builder passes it, authenticates those zipball
+#   requests. Anonymous ones share a rate limit with everything else leaving the
+#   runner. The secret is optional: without it the env var is simply unset and
+#   Composer downloads anonymously, so a plain `docker build` still works.
+RUN --mount=type=secret,id=composer_auth,env=COMPOSER_AUTH \
+    composer install --no-dev --no-interaction --no-progress \
+        --prefer-install=auto --no-scripts --no-autoloader
 
 COPY . .
 RUN composer dump-autoload --no-dev --optimize --classmap-authoritative \
