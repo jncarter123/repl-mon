@@ -4,10 +4,11 @@
          bootstrap="vendor/autoload.php"
          colors="true"
 >
+    <!-- One suite: every test lives in tests/Feature, the pure ones included.
+         A testsuite pointing at a directory that does not exist is a hard
+         error in PHPUnit, and an empty tests/Unit is not something git can
+         carry, so it existed locally and never on CI. -->
     <testsuites>
-        <testsuite name="Unit">
-            <directory>tests/Unit</directory>
-        </testsuite>
         <testsuite name="Feature">
             <directory>tests/Feature</directory>
         </testsuite>
