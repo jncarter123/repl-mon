@@ -69,6 +69,75 @@ Without it the app is a UI over an empty history.
 
 ---
 
+## Running it in a container
+
+Two services out of one image, in `compose.yaml`:
+
+| | |
+|:--|:--|
+| `app` | The UI, on FrankenPHP. Also runs the migrations on start. |
+| `scheduler` | `schedule:work` — the cron line above, with nothing else on the box to run it. |
+
+The scheduler is not an optional extra. Without it the container is a UI over
+an empty history.
+
+```bash
+cp docker.env.example docker.env   # mail settings live here
+docker compose up -d --build
+```
+
+Then `http://localhost:8000/register` for the first operator account, after
+which the sign-up page disappears as it does anywhere else.
+
+Everything the monitor owns — its SQLite database and its `APP_KEY` — is on the
+`repl-monitor-data` volume. **Back it up.** The key is what decrypts the stored
+database passwords; a volume restored without it leaves every pair with
+credentials that cannot be read. Set `APP_KEY` in `docker.env` instead if you
+would rather hold it yourself; leave it blank and the first run generates one
+and says so in the log.
+
+The monitor's own store is deliberately not on a server it watches. A monitor
+that goes down with the database is one that cannot tell you the database went
+down.
+
+### Next to MaxScale
+
+The container needs to reach the database servers itself; the host having
+access does not carry over. If MaxScale is already on a Docker network that can
+see them, put this on the same one — the bottom of `compose.yaml` has the
+stanza, commented:
+
+```yaml
+networks:
+  default:
+    name: maxscale_default   # docker network ls for the real name
+    external: true
+```
+
+**Point pairs at the servers, not at the MaxScale listener.** A pair's two
+addresses have to be the actual primary and the actual replica: the whole
+measurement is "write here, read *there*", and a read that MaxScale routes to
+whichever backend it likes — including the primary — measures nothing. Router
+ports are the one place these credentials should not go.
+
+### Day to day
+
+```bash
+docker compose logs -f scheduler                              # what it is doing every minute
+docker compose run --rm app php artisan replication:add-user  # another operator
+docker compose run --rm app php artisan replication:test pair-name
+docker compose run --rm scheduler check                       # one pass, now
+docker compose up -d --build                                  # upgrade; migrations run on start
+```
+
+The UI is published on `127.0.0.1:8000` only, on the assumption that something
+already terminating TLS goes in front of it. Widen the mapping in
+`compose.yaml` if not, and set `APP_URL` to whatever the browser sees.
+
+Times in the UI are UTC.
+
+---
+
 ## Setting up a pair
 
 ### 1. Give it a database to beat in

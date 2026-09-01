@@ -1,0 +1,17 @@
+{
+	frankenphp
+	# Terminate TLS at whatever is already in front of this; inside the
+	# compose network it is plain HTTP on 8080.
+	auto_https off
+	admin off
+	log {
+		output stderr
+		format console
+	}
+}
+
+{$SERVER_NAME::8080} {
+	root /app/public
+	encode zstd gzip
+	php_server
+}

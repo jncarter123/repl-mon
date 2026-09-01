@@ -133,6 +133,27 @@ pair in the list may be the one actually on fire.
 
 ---
 
+## Container
+
+`Dockerfile` + `compose.yaml` build **one image with two roles**, selected by
+the first argument to `docker/entrypoint.sh`: `web` (FrankenPHP over
+`public/`, plus the migrations) and `scheduler` (`schedule:work`). Do not fold
+the scheduler into the web container — an image that only serves the UI is a
+monitor that never checks anything.
+
+- The web role owns the migrations and the `APP_KEY`; the scheduler waits on
+  `service_healthy` so the two never race for either. Keep that `depends_on`.
+- `APP_KEY` is generated onto the data volume on first run if unset. It
+  decrypts the pairs' stored passwords, so it must live with the SQLite file,
+  not in the image.
+- The app's own store is SQLite on a volume, on purpose: the monitor must not
+  depend on a server it is watching. `QUEUE_CONNECTION=sync` for the same
+  reason — nothing queues, and a queued alert with no worker is a lost one.
+- Assets build on Debian, not Alpine: `package.json` pins `*-linux-x64-gnu`
+  binaries. The CSS build needs `vendor/` — `app.css` imports Flux from it.
+
+---
+
 ## What to avoid
 
 - **Never** compare a timestamp taken from one server against a clock on another.

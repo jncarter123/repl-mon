@@ -1,0 +1,55 @@
+name: repl-monitor
+
+# Two services, one image. The scheduler is not optional: without it the app is
+# a UI over an empty history.
+
+x-app: &app
+  build:
+    context: .
+  image: repl-monitor:latest
+  env_file:
+    - docker.env
+  environment:
+    APP_NAME: "Repl Monitor"
+    APP_ENV: production
+    APP_DEBUG: "false"
+    LOG_CHANNEL: stderr
+    LOG_LEVEL: info
+    # SQLite on the volume: the monitor keeps its own history somewhere that
+    # cannot go down with the servers it is watching.
+    DB_CONNECTION: sqlite
+    DB_DATABASE: /var/lib/repl-monitor/database.sqlite
+    SESSION_DRIVER: database
+    CACHE_STORE: database
+    # sync, not database: nothing in this app queues, and a queued job with no
+    # worker is an alert that never gets sent.
+    QUEUE_CONNECTION: sync
+  volumes:
+    - repl-monitor-data:/var/lib/repl-monitor
+  restart: unless-stopped
+
+services:
+  app:
+    <<: *app
+    ports:
+      - "127.0.0.1:8000:8080"
+
+  scheduler:
+    <<: *app
+    command: ["scheduler"]
+    depends_on:
+      app:
+        # Waits out the migrations and the APP_KEY, both of which the web
+        # container owns.
+        condition: service_healthy
+
+volumes:
+  repl-monitor-data:
+
+# Sitting next to MaxScale: join its network instead of making a new one.
+# `docker network ls` for the real name.
+#
+# networks:
+#   default:
+#     name: maxscale_default
+#     external: true
