@@ -27,16 +27,21 @@ only the things that are easy to get wrong.
 clock again after reading it off the replica. Switching either end to a server
 clock reintroduces exactly the drift problem this design exists to avoid.
 
-**`ReplicationProbe::awaitBeat()` is not a busy-wait to be optimised away.**
+**`HeartbeatManager::awaitBeat()` is not a busy-wait to be optimised away.**
 After writing beat N it polls the replica for up to `settle_timeout_ms` waiting
 for beat N to appear. Remove it and every healthy pair reports a full check
 interval of lag, because the newest row on the replica is still beat N-1. The
 loop exits the moment the beat lands, so the healthy path costs one query.
+`ReplicationProbe` and `HeartbeatProvisioner` both call it — the provisioner with
+a longer budget (`provision_verify_timeout_ms`), because a setup check run by
+hand can afford to wait and a per-minute check cannot.
 
 **`SHOW REPLICA STATUS` vs `SHOW SLAVE STATUS`.** Both are tried, and column
 names are read case-insensitively from both vocabularies
 (`Replica_IO_Running`/`Slave_IO_Running`, `Seconds_Behind_Source`/
-`Seconds_Behind_Master`). Do not collapse to one spelling.
+`Seconds_Behind_Master`). Do not collapse to one spelling. This lives in
+`ReplicaStatusReader` and has exactly one implementation; the probe and the
+setup-time diagnosis both go through it.
 
 **Three different "we could not read the status" cases, deliberately kept
 apart:**
@@ -63,6 +68,15 @@ that will not hand out `REPLICA MONITOR`.
   decide whether to alert.
 - `AlertDispatcher` sends and, crucially, **records** — including when there was
   nobody to send to.
+- `HeartbeatProvisioner` **acts and reports**: it creates the heartbeat schema
+  and table and then proves a beat crosses. It decides nothing about alerting and
+  writes no models. It assumes replication is already configured — it issues no
+  `CHANGE MASTER`, touches no server variable, and its only DDL is
+  `CREATE ... IF NOT EXISTS`. Keep it that way: a monitor that can reconfigure
+  replication is a different and much more dangerous piece of software.
+- `ReplicationFilters` and `GrantAdvice` are **pure**, for the same reason
+  `ReplicationEvaluator` is: the interesting judgement is in them, and the test
+  suite has no MariaDB.
 
 Livewire components are thin: UI state, delegate to services. No Eloquent
 queries or business logic in a component beyond the read that feeds the view.
@@ -162,3 +176,8 @@ monitor that never checks anything.
 - **Never** send an alert without recording it.
 - **Never** put business logic in a Livewire component or a Blade view.
 - **Never** widen `ReplicationEvaluator` to do I/O.
+- **Never** let provisioning grow past `CREATE ... IF NOT EXISTS` — no `DROP`, no
+  `ALTER`, nothing that changes how replication itself is set up.
+- **Never** fold a refused `CREATE` into a fault. A denial means somebody needs to
+  run a `GRANT`; the app prints it (`GrantAdvice`) rather than asking an operator
+  for credentials it would then have to hold.

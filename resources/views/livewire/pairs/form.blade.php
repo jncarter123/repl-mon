@@ -110,24 +110,58 @@
             </flux:subheading>
         </div>
 
-        <div class="grid gap-4 md:grid-cols-2">
-            <flux:input
-                wire:model="form.heartbeat_table"
-                label="Heartbeat table"
-                description="Lives in the database named above, and must be inside replication."
-                required
-            />
+        <flux:input
+            wire:model="form.heartbeat_table"
+            label="Heartbeat table"
+            description="Lives in the database named above, and must be inside replication."
+            required
+        />
 
-            <div class="flex items-end">
+        <flux:separator variant="subtle" />
+
+        <div class="space-y-4">
+            <div>
+                <flux:heading size="sm">Set it up</flux:heading>
+                <flux:text size="sm" class="mt-1">
+                    Creates the database, creates the table in it, then writes a beat and waits for it to arrive on
+                    the replica. That last step is the one worth having: a schema that has been filtered out of
+                    replication gets this far and then reads as broken forever. Replication itself must already be
+                    configured — nothing here touches it. Safe to run twice.
+                </flux:text>
+            </div>
+
+            <flux:field variant="inline">
+                <flux:checkbox wire:model="provisionReplica" />
+                <flux:label>Create on the replica as well — only for pairs that do not replicate DDL</flux:label>
+            </flux:field>
+
+            <div class="flex items-center gap-3">
                 <flux:button
                     icon="circle-stack"
-                    wire:click="installHeartbeat"
+                    wire:click="provision"
                     wire:loading.attr="disabled"
-                    wire:target="installHeartbeat"
+                    wire:target="provision"
                 >
-                    Create it on the primary
+                    Set up the heartbeat
                 </flux:button>
+                <flux:text size="sm" wire:loading wire:target="provision">
+                    Creating, then waiting for the beat to cross…
+                </flux:text>
             </div>
+
+            @foreach ($provisionSteps as $step)
+                <flux:callout
+                    :color="$step['color']"
+                    :icon="$step['icon']"
+                    :heading="$step['label'].' — '.$step['outcome']"
+                >
+                    <flux:callout.text class="break-words">{{ $step['message'] }}</flux:callout.text>
+
+                    @if ($step['remedy'])
+                        <pre class="mt-3 overflow-x-auto rounded-lg bg-zinc-900 p-3 text-xs leading-relaxed text-zinc-100">{{ $step['remedy'] }}</pre>
+                    @endif
+                </flux:callout>
+            @endforeach
         </div>
     </flux:card>
 

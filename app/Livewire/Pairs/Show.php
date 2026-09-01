@@ -8,7 +8,9 @@ use App\Models\AlertRecipient;
 use App\Models\ReplicationAlert;
 use App\Models\ReplicationCheck;
 use App\Models\ServerPair;
+use App\Services\HeartbeatProvisioner;
 use App\Services\ReplicationChecker;
+use App\Support\DatabaseError;
 use Flux\Flux;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\Collection;
@@ -31,6 +33,15 @@ class Show extends Component
     public string $recipientName = '';
 
     public string $recipientEmail = '';
+
+    /**
+     * The last verification, flattened for the view. Kept on the page rather
+     * than in a toast: when it fails it explains why, and that is more than a
+     * toast should be asked to hold.
+     *
+     * @var ?array<string, mixed>
+     */
+    public ?array $verifyResult = null;
 
     public function mount(ServerPair $pair): void
     {
@@ -131,6 +142,34 @@ class Show extends Component
 
         $this->pair->refresh();
         unset($this->checks, $this->alerts);
+    }
+
+    /**
+     * Write a beat and watch for it on the replica, right now. The same
+     * measurement the scheduled check makes, with a longer timeout and, when it
+     * fails, an explanation of what is in the way.
+     */
+    public function verifyReplication(HeartbeatProvisioner $provisioner): void
+    {
+        try {
+            $step = $provisioner->verify($this->pair)->steps[0] ?? null;
+        } catch (Throwable $e) {
+            $this->verifyResult = [
+                'color' => 'red',
+                'icon' => 'x-circle',
+                'outcome' => 'Failed',
+                'message' => DatabaseError::describe($e, $this->pair),
+            ];
+
+            return;
+        }
+
+        $this->verifyResult = $step === null ? null : [
+            'color' => $step->outcome->color(),
+            'icon' => $step->outcome->icon(),
+            'outcome' => $step->outcome->label(),
+            'message' => $step->message,
+        ];
     }
 
     public function render(): View

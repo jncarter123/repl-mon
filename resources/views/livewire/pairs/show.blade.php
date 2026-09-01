@@ -6,6 +6,14 @@
             <flux:button icon="arrow-path" wire:click="checkNow" wire:loading.attr="disabled" wire:target="checkNow">
                 Check now
             </flux:button>
+            <flux:button
+                icon="arrows-right-left"
+                wire:click="verifyReplication"
+                wire:loading.attr="disabled"
+                wire:target="verifyReplication"
+            >
+                Verify replication
+            </flux:button>
             <flux:button :href="route('pairs.edit', $pair)" icon="pencil-square" variant="primary" wire:navigate>
                 Edit
             </flux:button>
@@ -17,6 +25,16 @@
             <flux:callout.text>Nothing is being checked and no alerts will be sent until you switch it back on.</flux:callout.text>
         </flux:callout>
     @endunless
+
+    @if ($verifyResult)
+        <flux:callout
+            :color="$verifyResult['color']"
+            :icon="$verifyResult['icon']"
+            :heading="'Replication — '.$verifyResult['outcome']"
+        >
+            <flux:callout.text class="break-words">{{ $verifyResult['message'] }}</flux:callout.text>
+        </flux:callout>
+    @endif
 
     <flux:card class="space-y-4">
         <div class="flex flex-wrap items-center gap-3">

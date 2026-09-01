@@ -49,7 +49,7 @@ class TestPairConnectionCommand extends Command
                     '  Heartbeat table',
                     $result['heartbeat_table']
                         ? '<fg=green>present</>'
-                        : '<fg=yellow>missing — run replication:install-heartbeat</>',
+                        : '<fg=yellow>missing — run replication:provision</>',
                 );
 
                 if ($endpoint === Endpoint::Replica && $result['status_message'] !== null) {

@@ -21,11 +21,55 @@ use Throwable;
  */
 class PairConnectionFactory
 {
+    /**
+     * A connection with the pair's own schema selected — what the monitor uses
+     * for everything it does minute to minute.
+     */
     public function connection(ServerPair $pair, Endpoint $endpoint): Connection
     {
-        $name = $this->connectionName($pair, $endpoint);
+        return $this->open($pair, $endpoint, $this->connectionName($pair, $endpoint), []);
+    }
 
-        Config::set("database.connections.{$name}", $this->configFor($pair, $endpoint));
+    /**
+     * A connection to the server rather than to the pair's schema, for the one
+     * job that cannot use the connection above: creating that schema.
+     *
+     * You cannot CREATE DATABASE `repl_monitor` over a connection whose DSN says
+     * `dbname=repl_monitor`, because the connect fails before the statement ever
+     * runs. This one selects `information_schema`, which exists on every server
+     * and which every user may open — neither of which is reliably true of an
+     * empty database name.
+     */
+    public function serverConnection(ServerPair $pair, Endpoint $endpoint): Connection
+    {
+        return $this->open($pair, $endpoint, $this->connectionName($pair, $endpoint, true), [
+            'database' => 'information_schema',
+        ]);
+    }
+
+    public function forget(ServerPair $pair): void
+    {
+        foreach (Endpoint::cases() as $endpoint) {
+            foreach ([false, true] as $serverLevel) {
+                $name = $this->connectionName($pair, $endpoint, $serverLevel);
+
+                DB::purge($name);
+                Config::set("database.connections.{$name}", null);
+            }
+        }
+    }
+
+    public function connectionName(ServerPair $pair, Endpoint $endpoint, bool $serverLevel = false): string
+    {
+        return 'pair_'.($pair->getKey() ?? 'draft').'_'.$endpoint->value.($serverLevel ? '_server' : '');
+    }
+
+    /**
+     * @param  array<string, mixed>  $overrides
+     */
+    protected function open(ServerPair $pair, Endpoint $endpoint, string $name, array $overrides): Connection
+    {
+        Config::set("database.connections.{$name}", [...$this->configFor($pair, $endpoint), ...$overrides]);
 
         // Purge first: a pair edited in the UI must not keep talking to the
         // host it named a minute ago.
@@ -36,21 +80,6 @@ class PairConnectionFactory
         $this->applyStatementTimeout($connection);
 
         return $connection;
-    }
-
-    public function forget(ServerPair $pair): void
-    {
-        foreach (Endpoint::cases() as $endpoint) {
-            $name = $this->connectionName($pair, $endpoint);
-
-            DB::purge($name);
-            Config::set("database.connections.{$name}", null);
-        }
-    }
-
-    public function connectionName(ServerPair $pair, Endpoint $endpoint): string
-    {
-        return 'pair_'.($pair->getKey() ?? 'draft').'_'.$endpoint->value;
     }
 
     /**

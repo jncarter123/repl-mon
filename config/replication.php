@@ -24,6 +24,15 @@ return [
     'settle_poll_ms' => (int) env('REPL_SETTLE_POLL_MS', 200),
 
     /*
+    | Setting a pair up runs the same measurement once, by hand, and can afford
+    | to be far more patient about it than a check that runs every minute. A
+    | replica that needs eight seconds on a quiet afternoon is worth knowing
+    | about; it is not worth failing the setup over.
+    */
+
+    'provision_verify_timeout_ms' => (int) env('REPL_PROVISION_VERIFY_TIMEOUT_MS', 10000),
+
+    /*
     |--------------------------------------------------------------------------
     | Connections
     |--------------------------------------------------------------------------

@@ -142,16 +142,33 @@ Times in the UI are UTC.
 
 ### 1. Give it a database to beat in
 
-The heartbeat table has to be somewhere that is actually replicated. Either use
-an existing replicated schema or make one for the purpose:
+The heartbeat table has to be somewhere that is actually replicated. Either name
+an existing replicated schema when you add the pair, or let the app make one for
+the purpose — **Set up the heartbeat** on the pair form creates the schema,
+creates the table in it, and then proves a beat actually crosses. Same thing from
+the command line:
+
+```bash
+php artisan replication:provision <pair>
+```
+
+If you would rather do it by hand, it is one statement:
 
 ```sql
 -- on the primary
 CREATE DATABASE repl_monitor;
 ```
 
-Make sure it is not excluded by `binlog_ignore_db` / `replicate_ignore_db` on
-either side, or the monitor will correctly and permanently report it as broken.
+Either way, the schema must not be excluded by `binlog_ignore_db` /
+`replicate_ignore_db` on either side, or the monitor will correctly and
+permanently report the pair as broken. This is the easiest way to set the app up
+wrong and the hardest to spot later, which is why the setup step ends by writing
+a beat and waiting for it: if it does not arrive, it reads those four variables
+and tells you which one is in the way, or that a replication thread is stopped.
+
+This does not configure replication — it assumes your DBAs already have. It
+issues no `CHANGE MASTER`, changes no server settings, and its only DDL is
+`CREATE ... IF NOT EXISTS`.
 
 ### 2. Grant the monitor user
 
@@ -182,13 +199,23 @@ Nothing here needs write access to your data, and nothing needs `SUPER`.
 
 **Server pairs → Add a pair.** Fill in both sides, use **Test connection** on
 each — it reports connecting, the heartbeat table and the status grant
-separately, so a half-working pair tells you which half — then **Create it on
-the primary** to make the heartbeat table. Replication carries the DDL to the
-replica; if your setup does not replicate DDL, run:
+separately, so a half-working pair tells you which half — then **Set up the
+heartbeat**, which creates the schema and table on the primary and confirms the
+beat reaches the replica.
+
+Replication carries the DDL across for you. If your setup does not replicate DDL,
+tick **Create on the replica as well**, or run:
 
 ```bash
-php artisan replication:install-heartbeat <pair> --replica
+php artisan replication:provision <pair> --replica
 ```
+
+If the monitor's own credentials are not allowed to create the schema, the app
+does not ask you for a root password: it prints the `CREATE DATABASE` and `GRANT`
+to hand to somebody who has the rights, and you run it again afterwards. It is
+safe to run as many times as you like.
+
+Later on, **Verify replication** on a pair's own page repeats just the last step.
 
 ### 4. Say who gets told
 
@@ -226,7 +253,8 @@ as no alert.
 |:--|:--|
 | `replication:check [pair]` | One pass over every enabled pair. This is the scheduled one. |
 | `replication:test [pair]` | Connect to both servers and report which grants are missing. |
-| `replication:install-heartbeat [pair] [--replica]` | Create the heartbeat table. |
+| `replication:provision [pair] [--replica] [--verify-only]` | Create the heartbeat schema and table, then prove a beat gets across. |
+| `replication:install-heartbeat [pair] [--replica]` | Create just the heartbeat table, assuming the schema exists. |
 | `replication:prune` | Trim check history (default 14 days); alerts are kept a year. |
 | `replication:add-user` | Create an operator account. |
 
