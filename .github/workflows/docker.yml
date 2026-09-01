@@ -35,6 +35,14 @@ jobs:
       - name: Set up Buildx
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
+      # The username is not a secret, and "incorrect username or password" does
+      # not say which username was tried. NAMESPACE falls back to the GitHub
+      # owner, so a DOCKERHUB_USERNAME the `vars` context cannot see fails here
+      # looking like a bad token. Print it: that is the difference between "the
+      # variable is not set where I think" and "the token is wrong".
+      - name: Say who we are logging in as
+        run: echo "Logging in to Docker Hub as '${{ env.NAMESPACE }}'"
+
       - name: Log in to Docker Hub
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:

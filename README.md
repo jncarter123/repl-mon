@@ -127,6 +127,15 @@ secret on the repository, `DOCKERHUB_TOKEN` — a Docker Hub access token with
 read/write — and a `DOCKERHUB_USERNAME` variable if your Hub namespace is not
 the GitHub owner's name.
 
+Those are two different tabs under *Settings → Secrets and variables →
+Actions*: the token goes in **Secrets**, the username in **Variables**, and it
+has to be a *repository* variable — `vars` cannot see an environment-scoped one
+unless the job asks for that environment, and this job does not. A username the
+workflow cannot see is not an error: it falls back to the GitHub owner's name
+and fails at the login as `incorrect username or password`, which reads like a
+bad token. The run prints the username it is about to use, so the log settles
+which of the two it is.
+
 ```bash
 git tag v0.1.0 && git push origin v0.1.0   # publishes 0.1.0, 0.1, latest
 ```
