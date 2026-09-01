@@ -6,6 +6,8 @@ use App\Enums\CheckStatus;
 use App\Models\AlertRecipient;
 use App\Models\ReplicationAlert;
 use App\Models\ServerPair;
+use App\Models\User;
+use App\Support\HealthEndpoint;
 
 beforeEach(function () {
     config()->set('replication.health.token', 'secret-token');
@@ -212,4 +214,43 @@ it('needs no session, and never redirects a monitoring system to a login page', 
     checkedPair(CheckStatus::Ok);
 
     $this->get('/api/health?token=secret-token')->assertOk();
+});
+
+it('shows the url and the token on the dashboard, where an operator can copy them', function () {
+    checkedPair(CheckStatus::Ok, ['name' => 'orders']);
+
+    $this->actingAs(User::factory()->create());
+
+    $response = $this->get(route('dashboard'));
+
+    $response->assertOk()
+        ->assertSee('Health endpoint')
+        ->assertSee(route('api.health'))
+        ->assertSee('secret-token')
+        ->assertSee('check_http', escape: false);
+});
+
+it('says how to switch the endpoint on when no token is set', function () {
+    config()->set('replication.health.token', null);
+
+    $this->actingAs(User::factory()->create());
+
+    $response = $this->get(route('dashboard'));
+
+    $response->assertOk()
+        ->assertSee('No token is set')
+        ->assertSee('REPL_HEALTH_TOKEN')
+        ->assertDontSee('check_http');
+});
+
+it('builds a check command for wherever the app is served, without the token in it', function () {
+    $endpoint = new HealthEndpoint('https://monitor.example.com:8443/api/health', 'secret-token');
+
+    expect($endpoint->checkCommand())
+        ->toContain('-H monitor.example.com')
+        ->toContain('-p 8443')
+        ->toContain('--ssl')
+        ->toContain('-u /api/health')
+        ->toContain('-s "REPLICATION OK"')
+        ->not->toContain('secret-token');
 });
