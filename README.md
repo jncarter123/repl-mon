@@ -168,9 +168,47 @@ docker compose run --rm scheduler check                       # one pass, now
 docker compose up -d --build                                  # upgrade; migrations run on start
 ```
 
+### Behind a reverse proxy
+
 The UI is published on `127.0.0.1:8000` only, on the assumption that something
 already terminating TLS goes in front of it. Widen the mapping in
-`compose.yaml` if not, and set `APP_URL` to whatever the browser sees.
+`compose.yaml` if not.
+
+Set `APP_URL` to what the browser sees, **scheme included** —
+`https://repl-monitor.example.com`. The container itself only ever speaks plain
+http on 8080, so this is what tells the app it is an https site, and getting it
+wrong is not subtle: the browser blocks every asset on the page as mixed
+content and you get an unstyled login form, with nothing in any server log
+saying why.
+
+Two mechanisms carry it, and the second exists because the first is not always
+enough. `trustProxies` in `bootstrap/app.php` honours `X-Forwarded-Proto` — the
+ordinary case; it trusts any address, which is safe exactly as long as the port
+stays on loopback as above. But put a CDN or a load balancer in front of the
+proxy that terminates TLS and speaks plain http onward, and the proxy will
+truthfully forward `X-Forwarded-Proto: http`, arguing for the wrong scheme. So
+an `https://` `APP_URL` also forces the scheme outright
+(`AppServiceProvider::configureUrlScheme()`), which is why setting it correctly
+is the thing that actually matters here.
+
+If the proxy is itself a container — Traefik, nginx-proxy, Caddy in Docker —
+two things bite, and both look identical from outside: a 502, with the proxy's
+own dashboard perfectly green, because a proxy does not discover an unreachable
+backend until a request arrives.
+
+**Reach it over a network, not over `127.0.0.1`.** A `127.0.0.1:8000` publish
+binds the host's loopback and nothing else, so from inside another container it
+is unreachable — by the bridge gateway, by `host.docker.internal`, by anything.
+Put the proxy on this project's network instead (there is a commented block at
+the foot of `compose.yaml` for the reverse case, joining an existing one), drop
+the `ports:` mapping entirely, and address the container: `http://app:8080`.
+
+**Say which port.** The image inherits `EXPOSE 80`, `443` and `2019` from
+FrankenPHP on top of its own `8080`, and 8080 is the only one listening. A
+proxy that discovers backends from Docker cannot pick for you with five to
+choose from, so tell it — for Traefik that is
+`traefik.http.services.<name>.loadbalancer.server.port=8080`, alongside
+`traefik.docker.network` if the container is on more than one network.
 
 Times in the UI are UTC.
 
