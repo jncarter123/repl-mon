@@ -47,9 +47,11 @@ class TestPairConnectionCommand extends Command
 
                 $this->components->twoColumnDetail(
                     '  Heartbeat table',
-                    $result['heartbeat_table']
-                        ? '<fg=green>present</>'
-                        : '<fg=yellow>missing — run replication:provision</>',
+                    match (true) {
+                        $result['heartbeat_table'] => '<fg=green>present</>',
+                        ! $result['schema_present'] => '<fg=yellow>no database yet — run replication:provision</>',
+                        default => '<fg=yellow>missing — run replication:provision</>',
+                    },
                 );
 
                 if ($endpoint === Endpoint::Replica && $result['status_message'] !== null) {

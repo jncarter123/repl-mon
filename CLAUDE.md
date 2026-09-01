@@ -74,6 +74,13 @@ that will not hand out `REPLICA MONITOR`.
   `CHANGE MASTER`, touches no server variable, and its only DDL is
   `CREATE ... IF NOT EXISTS`. Keep it that way: a monitor that can reconfigure
   replication is a different and much more dangerous piece of software.
+- `ConnectionTester` reports each capability separately — connecting, the schema
+  being there, the table being there, the status grant — and when the pair's
+  schema does not exist yet it **retries over `serverConnection()`** rather than
+  reporting a dead connection. The DSN names the schema, so MariaDB refuses the
+  connect before any statement runs; left as a plain failure, the first thing
+  anybody does on a new pair reads as bad credentials and they go and create the
+  database by hand instead of pressing the setup button that would have made it.
 - `HealthReporter` **reads and reports** for the outside world: it answers
   `GET /api/health` from this app's own store only. It never probes a monitored
   server, never writes, and never alerts — a health endpoint that could hang on a

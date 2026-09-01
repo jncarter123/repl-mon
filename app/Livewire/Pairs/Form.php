@@ -68,6 +68,7 @@ class Form extends Component
                 'ok' => false,
                 'message' => DatabaseError::describe($e),
                 'version' => null,
+                'schema_present' => false,
                 'heartbeat_table' => false,
                 'status_readable' => null,
                 'status_message' => null,

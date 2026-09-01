@@ -228,6 +228,12 @@ the command line:
 php artisan replication:provision <pair>
 ```
 
+**The database does not have to exist before you add the pair.** Name it on the
+form anyway and set the pair up; **Test connection** says
+`The database \`repl_monitor\` is not there yet` rather than failing, because it
+falls back to asking the server rather than the schema, and the grant check on
+the replica still runs.
+
 If you would rather do it by hand, it is one statement:
 
 ```sql
@@ -271,12 +277,27 @@ GRANT REPLICATION CLIENT ON *.* TO 'repl_monitor'@'10.0.1.%';
 
 Nothing here needs write access to your data, and nothing needs `SUPER`.
 
+**You may only need to run all of this on the primary.** `CREATE USER` and
+`GRANT` are statements like any other, so unless the `mysql` schema is filtered
+out of your replication they cross to the replica by themselves — which is why
+the second block names its own host pattern rather than assuming where it is
+run. Run it on the primary, then confirm on the replica:
+
+```sql
+-- on the replica
+SHOW GRANTS FOR 'repl_monitor'@'10.0.1.%';
+```
+
+If that comes back empty, your setup does not replicate `mysql` — run the block
+on the replica as well. Running it on both is harmless either way: an
+already-replicated `CREATE USER` just errors as a duplicate.
+
 ### 3. Add the pair
 
 **Server pairs → Add a pair.** Fill in both sides, use **Test connection** on
-each — it reports connecting, the heartbeat table and the status grant
-separately, so a half-working pair tells you which half — then **Set up the
-heartbeat**, which creates the schema and table on the primary and confirms the
+each — it reports connecting, whether the database is there, the heartbeat table
+and the status grant separately, so a half-working pair tells you which half —
+then **Set up the heartbeat**, which creates the schema and table on the primary and confirms the
 beat reaches the replica.
 
 Replication carries the DDL across for you. If your setup does not replicate DDL,

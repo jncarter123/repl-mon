@@ -39,7 +39,13 @@
 
                 <div class="grid gap-4 md:grid-cols-2">
                     <flux:input wire:model="form.{{ $side }}_username" label="Username" required />
-                    <flux:input wire:model="form.{{ $side }}_database" label="Database" placeholder="repl_monitor" required />
+                    <flux:input
+                        wire:model="form.{{ $side }}_database"
+                        label="Database"
+                        placeholder="repl_monitor"
+                        description="Where the heartbeat lives. It does not have to exist yet."
+                        required
+                    />
                 </div>
 
                 <flux:input
@@ -88,8 +94,12 @@
 
                         @if ($result['ok'])
                             <flux:callout.text class="mt-2">
-                                Heartbeat table:
-                                <strong>{{ $result['heartbeat_table'] ? 'present' : 'missing' }}</strong>
+                                @if ($result['schema_present'])
+                                    Heartbeat table:
+                                    <strong>{{ $result['heartbeat_table'] ? 'present' : 'missing' }}</strong>
+                                @else
+                                    Database and heartbeat table: <strong>not there yet</strong>
+                                @endif
                                 @if ($result['status_message'])
                                     <br>{{ $result['status_message'] }}
                                 @endif
