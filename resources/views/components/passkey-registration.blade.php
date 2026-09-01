@@ -51,9 +51,13 @@
                 this.showForm = false;
                 await $wire.loadPasskeys();
             } catch (e) {
-                if (e.constructor?.name !== 'UserCancelledError') {
-                    this.error = e.message;
-                }
+                // A NotAllowedError arrives here as UserCancelledError whatever the
+                // real cause: a dismissed prompt, the timeout, or a browser that
+                // refuses WebAuthn on this page outright — Chrome does that on a
+                // certificate it does not trust, and it fails with no prompt at all.
+                this.error = e.name === 'UserCancelledError'
+                    ? '{{ __('The browser cancelled the passkey request. If you were not asked to confirm, this browser will not use passkeys on this page at all — an untrusted TLS certificate is the usual reason.') }}'
+                    : e.message;
             } finally {
                 this.loading = false;
             }
