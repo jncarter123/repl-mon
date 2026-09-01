@@ -276,6 +276,77 @@ as no alert.
 
 ---
 
+## Watching the monitor
+
+Email is one way out of this app, and it is the one that fails quietly: a
+scheduler that has stopped, an SMTP server that has started refusing mail, or a
+pair nobody is on the list for all look exactly like a quiet week. So there is a
+second way out, for Icinga or anything else that speaks HTTP:
+
+```
+GET /api/health
+```
+
+It needs a token. Without one set the route 404s — it names your pairs and their
+state, so it is not something to leave open by accident:
+
+```bash
+REPL_HEALTH_TOKEN=$(openssl rand -hex 24)   # docker.env, or .env
+```
+
+Send it as `Authorization: Bearer …`, as `X-Health-Token: …`, or — for a check
+command that can only send a URL — as `?token=…`.
+
+```bash
+curl -sS -H "X-Health-Token: $REPL_HEALTH_TOKEN" http://localhost:8000/api/health
+```
+
+```
+REPLICATION CRITICAL - 1 broken, 2 healthy of 3 monitored pairs (1 paused)
+MONITOR: Nobody would be emailed about analytics: the pair has no recipients of its own and the global list is empty.
+CRITICAL: payments is broken — The replica reports no replication at all.
+OK: orders is healthy, 0.42s behind
+OK: reporting is healthy, 1.1s behind
+PAUSED: staging is not being checked
+| total=4 enabled=3 paused=1 ok=2 lagging=0 broken=1 unreachable=0 unknown=0 stale=0 max_lag=1.1s oldest_check=31s
+```
+
+The first line is the whole verdict, and the status code says the same thing:
+
+| | |
+|:--|:--|
+| `200` + `REPLICATION OK` | Every enabled pair is healthy and was checked in the last few minutes. |
+| `503` + `REPLICATION WARNING` | Lagging, never yet checked, nothing configured to watch, or a pair nobody would be emailed about. |
+| `503` + `REPLICATION CRITICAL` | Broken, unreachable, **not checked recently**, or an alert that could not be delivered. |
+| `401` | The token is wrong or missing. |
+| `404` | No token is configured, or `?pair=` names a pair that does not exist. |
+
+Lag answers 503 along with everything else, deliberately: a check that reads
+nothing but the status code has to see a replica falling behind, or the failure
+this endpoint exists to prevent walks straight back in.
+
+**"Not checked recently" is the point of the whole thing.** Every other signal
+here is one this app already emails about. That one is the signal it cannot
+send: if `replication:check` has not run for `REPL_HEALTH_STALE_AFTER_MINUTES`
+(default 5), every status on the dashboard is older than it looks and no email
+is coming, however bad things get. Nothing inside the container can notice
+that — hence the endpoint.
+
+In Icinga, belt and braces — the status code *and* the string:
+
+```
+check_http -H monitor.example.com -u /api/health \
+           -k "X-Health-Token: <token>" -s "REPLICATION OK"
+```
+
+Add `?pair=<name|id|key>` for a service attached to the host a single pair lives
+on; the pair's UUID is the stable one if the name might be edited later.
+`?format=json` (or `Accept: application/json`) returns the same report with the
+numbers unrounded, for a dashboard or a custom plugin. The `|` line is perfdata
+for something that reads the body — `check_http` reports its own and ignores it.
+
+---
+
 ## Commands
 
 | Command | |

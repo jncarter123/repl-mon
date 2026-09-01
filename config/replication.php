@@ -67,6 +67,45 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Health endpoint
+    |--------------------------------------------------------------------------
+    |
+    | GET /api/health, for Icinga or anything else that speaks HTTP. It answers
+    | the question this app cannot answer about itself from the inside: is the
+    | monitor still running, and is every pair it watches healthy?
+    |
+    | The token is required. Leave it unset and the route 404s — the endpoint
+    | names your pairs and their state, so it is not something to leave open by
+    | accident.
+    |
+    */
+
+    'health' => [
+
+        'token' => env('REPL_HEALTH_TOKEN'),
+
+        /*
+        | How old the newest check for a pair may get before the endpoint calls
+        | it critical. This is the "nothing silently failed" number: checks run
+        | every minute, so anything past a few minutes means the scheduler is
+        | dead, wedged, or was never started, and every pair on the dashboard is
+        | showing a status from before that happened.
+        */
+
+        'stale_after_minutes' => (int) env('REPL_HEALTH_STALE_AFTER_MINUTES', 5),
+
+        /*
+        | An alert that could not be delivered is a failure of the monitor
+        | itself, so it is reported here for a while after it happens rather
+        | than only sitting in the history where nobody is looking.
+        */
+
+        'delivery_failure_window_minutes' => (int) env('REPL_HEALTH_DELIVERY_WINDOW_MINUTES', 60),
+
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | History retention
     |--------------------------------------------------------------------------
     |

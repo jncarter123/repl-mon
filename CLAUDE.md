@@ -74,12 +74,50 @@ that will not hand out `REPLICA MONITOR`.
   `CHANGE MASTER`, touches no server variable, and its only DDL is
   `CREATE ... IF NOT EXISTS`. Keep it that way: a monitor that can reconfigure
   replication is a different and much more dangerous piece of software.
+- `HealthReporter` **reads and reports** for the outside world: it answers
+  `GET /api/health` from this app's own store only. It never probes a monitored
+  server, never writes, and never alerts — a health endpoint that could hang on a
+  dead MariaDB is one more thing to go wrong at the worst moment.
 - `ReplicationFilters` and `GrantAdvice` are **pure**, for the same reason
   `ReplicationEvaluator` is: the interesting judgement is in them, and the test
   suite has no MariaDB.
 
 Livewire components are thin: UI state, delegate to services. No Eloquent
 queries or business logic in a component beyond the read that feeds the view.
+
+---
+
+## The health endpoint
+
+`GET /api/health` (`routes/api.php` → `HealthController` → `HealthReporter`)
+exists because every other way out of this app is email, and email fails
+quietly. Two rules carry the whole design:
+
+**Stale checks are critical, whatever the pairs last said.** If no
+`replication:check` has run for `health.stale_after_minutes`, every pair's
+`current_status` is a museum piece and no alert is coming, however bad things
+get. This is the one failure only an outside observer can see, and it is the
+reason the endpoint exists — a version of it that reports green pairs while
+nothing is checking them is worse than not having it.
+
+**Only 200 means OK. Everything else is 503, lag included.** A check command
+that reads nothing but the status code has to catch a lagging replica too. The
+body still separates `REPLICATION WARNING` from `REPLICATION CRITICAL` for
+anyone parsing it.
+
+Also reported, because each is a way for a real outage to go unheard: a pair
+nobody would be emailed about, an alert with a `delivery_error` inside
+`health.delivery_failure_window_minutes`, and nothing enabled to watch at all.
+
+The token is required — no `REPL_HEALTH_TOKEN`, no route (404), because the
+response names pairs and their state. A *wrong* token is 401: that one is a
+misconfigured check command and telling the two apart is worth more than the
+little it gives away. The route is outside the `web` group on purpose — no
+session, no CSRF, and never a redirect to a login page for something that only
+reads status codes.
+
+Keep the text body's first line a complete verdict. It is what a paging system
+quotes, and it is the string operators match on (`check_http -s`).
 
 ---
 
@@ -174,6 +212,8 @@ monitor that never checks anything.
 - **Never** let a single pair's failure abort the run for the rest.
 - **Never** treat a missing `REPLICA MONITOR` grant as an outage.
 - **Never** send an alert without recording it.
+- **Never** let the health endpoint touch a monitored server, or answer 200 on
+  anything but a healthy, freshly-checked list.
 - **Never** put business logic in a Livewire component or a Blade view.
 - **Never** widen `ReplicationEvaluator` to do I/O.
 - **Never** let provisioning grow past `CREATE ... IF NOT EXISTS` — no `DROP`, no
