@@ -1,6 +1,7 @@
 <?php
 
 use App\Livewire\Dashboard;
+use App\Livewire\Health;
 use App\Livewire\Pairs;
 use App\Livewire\Recipients;
 use Illuminate\Support\Facades\Route;
@@ -17,6 +18,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::livewire('pairs/{pair}/edit', Pairs\Form::class)->name('pairs.edit');
 
     Route::livewire('recipients', Recipients\Index::class)->name('recipients.index');
+
+    // Not a page about the pairs: a page about how something else watches this.
+    Route::livewire('health', Health\Index::class)->name('health.index');
 });
 
 require __DIR__.'/settings.php';

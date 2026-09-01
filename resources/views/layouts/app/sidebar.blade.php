@@ -23,6 +23,10 @@
                     <flux:sidebar.item icon="envelope" :href="route('recipients.index')" :current="request()->routeIs('recipients.*')" wire:navigate>
                         {{ __('Recipients') }}
                     </flux:sidebar.item>
+
+                    <flux:sidebar.item icon="signal" :href="route('health.index')" :current="request()->routeIs('health.*')" wire:navigate>
+                        {{ __('Health endpoint') }}
+                    </flux:sidebar.item>
                 </flux:sidebar.group>
             </flux:sidebar.nav>
 

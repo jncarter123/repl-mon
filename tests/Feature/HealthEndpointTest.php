@@ -3,11 +3,14 @@
 declare(strict_types=1);
 
 use App\Enums\CheckStatus;
+use App\Livewire\Health\Index as HealthPage;
 use App\Models\AlertRecipient;
+use App\Models\HealthToken;
 use App\Models\ReplicationAlert;
 use App\Models\ServerPair;
 use App\Models\User;
 use App\Support\HealthEndpoint;
+use Livewire\Livewire;
 
 beforeEach(function () {
     config()->set('replication.health.token', 'secret-token');
@@ -216,35 +219,123 @@ it('needs no session, and never redirects a monitoring system to a login page', 
     $this->get('/api/health?token=secret-token')->assertOk();
 });
 
-it('shows the url and the token on the dashboard, where an operator can copy them', function () {
-    checkedPair(CheckStatus::Ok, ['name' => 'orders']);
+it('shows the url and every token on its own page, where an operator can copy them', function () {
+    HealthToken::factory()->create(['name' => 'icinga-master', 'token' => 'stored-token']);
 
     $this->actingAs(User::factory()->create());
 
-    $response = $this->get(route('dashboard'));
+    $response = $this->get(route('health.index'));
 
     $response->assertOk()
         ->assertSee('Health endpoint')
         ->assertSee(route('api.health'))
+        ->assertSee('icinga-master')
+        ->assertSee('stored-token')
         ->assertSee('secret-token')
+        ->assertSee('never polled')
         ->assertSee('check_http', escape: false);
 });
 
-it('says how to switch the endpoint on when no token is set', function () {
+it('says the endpoint is off when no token exists anywhere', function () {
     config()->set('replication.health.token', null);
 
     $this->actingAs(User::factory()->create());
 
-    $response = $this->get(route('dashboard'));
+    $this->get(route('health.index'))
+        ->assertOk()
+        ->assertSee('No token exists, so the URL answers 404')
+        ->assertSee('Generate a token');
+});
 
-    $response->assertOk()
-        ->assertSee('No token is set')
-        ->assertSee('REPL_HEALTH_TOKEN')
-        ->assertDontSee('check_http');
+it('generates a token from the dashboard that opens the endpoint at once', function () {
+    config()->set('replication.health.token', null);
+    checkedPair(CheckStatus::Ok);
+
+    $this->actingAs(User::factory()->create());
+
+    $this->get('/api/health')->assertNotFound();
+
+    Livewire::test(HealthPage::class)
+        ->set('tokenName', 'icinga-master')
+        ->call('generateToken')
+        ->assertHasNoErrors();
+
+    $token = HealthToken::query()->sole();
+
+    expect($token->name)->toBe('icinga-master')
+        ->and($token->token)->toHaveLength(48)
+        ->and($token->last_used_at)->toBeNull();
+
+    // Nothing to restart: the token works on the next request.
+    $this->get('/api/health?token='.$token->token)->assertOk();
+
+    expect($token->fresh()->last_used_at)->not->toBeNull();
+});
+
+it('names a token for you when you do not', function () {
+    $this->actingAs(User::factory()->create());
+
+    Livewire::test(HealthPage::class)->call('generateToken')->call('generateToken');
+
+    expect(HealthToken::query()->pluck('name')->all())->toBe(['token 1', 'token 2']);
+});
+
+it('keeps both tokens working while a rotation is in flight', function () {
+    config()->set('replication.health.token', null);
+    checkedPair(CheckStatus::Ok);
+
+    $old = HealthToken::factory()->create(['token' => 'old-token']);
+    HealthToken::factory()->create(['token' => 'new-token']);
+
+    $this->get('/api/health?token=old-token')->assertOk();
+    $this->get('/api/health?token=new-token')->assertOk();
+
+    $this->actingAs(User::factory()->create());
+
+    Livewire::test(HealthPage::class)->call('revokeToken', $old->id);
+
+    $this->get('/api/health?token=old-token')->assertUnauthorized();
+    $this->get('/api/health?token=new-token')->assertOk();
+});
+
+it('switches the endpoint off again when the last token is deleted', function () {
+    config()->set('replication.health.token', null);
+    checkedPair(CheckStatus::Ok);
+
+    $token = HealthToken::factory()->create(['token' => 'only-token']);
+
+    $this->actingAs(User::factory()->create());
+
+    Livewire::test(HealthPage::class)->call('revokeToken', $token->id);
+
+    $this->get('/api/health?token=only-token')->assertNotFound();
+});
+
+it('stamps a token as used at most once a minute', function () {
+    config()->set('replication.health.token', null);
+    checkedPair(CheckStatus::Ok);
+
+    $token = HealthToken::factory()->create(['token' => 'polled-token']);
+
+    $this->get('/api/health?token=polled-token')->assertOk();
+
+    $first = $token->fresh()->last_used_at;
+
+    expect($first)->not->toBeNull();
+
+    $this->get('/api/health?token=polled-token')->assertOk();
+
+    expect($token->fresh()->last_used_at->equalTo($first))->toBeTrue();
+
+    $this->travel(2)->minutes();
+
+    $this->get('/api/health?token=polled-token')->assertOk();
+
+    expect($token->fresh()->last_used_at->greaterThan($first))->toBeTrue();
 });
 
 it('builds a check command for wherever the app is served, without the token in it', function () {
-    $endpoint = new HealthEndpoint('https://monitor.example.com:8443/api/health', 'secret-token');
+    $endpoint = new HealthEndpoint('https://monitor.example.com:8443/api/health');
 
     expect($endpoint->checkCommand())
         ->toContain('-H monitor.example.com')
@@ -253,4 +344,10 @@ it('builds a check command for wherever the app is served, without the token in 
         ->toContain('-u /api/health')
         ->toContain('-s "REPLICATION OK"')
         ->not->toContain('secret-token');
+});
+
+it('keeps the endpoint page behind the login, tokens and all', function () {
+    HealthToken::factory()->create(['token' => 'stored-token']);
+
+    $this->get(route('health.index'))->assertRedirect(route('login'));
 });

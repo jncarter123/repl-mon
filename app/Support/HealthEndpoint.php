@@ -5,36 +5,21 @@ declare(strict_types=1);
 namespace App\Support;
 
 /**
- * Where the health endpoint is and how to call it — the two things an operator
- * has to type into Icinga, and the one thing they cannot look up from inside
- * the container without reading the environment.
+ * Where the health endpoint is and how to call it — the URL and the command
+ * that goes into Icinga. The tokens are HealthTokens' business; this is only
+ * the address.
  *
- * Pure: hand it a URL and a token, it renders. No config, no request.
+ * Pure: hand it a URL, it renders. No config, no request.
  */
 final readonly class HealthEndpoint
 {
     public function __construct(
         public string $url,
-        public ?string $token,
     ) {}
 
     public static function current(): self
     {
-        $token = (string) config('replication.health.token');
-
-        return new self(
-            url: route('api.health'),
-            token: $token === '' ? null : $token,
-        );
-    }
-
-    /**
-     * No token, no endpoint: the route 404s, so there is nothing to show an
-     * operator but how to switch it on.
-     */
-    public function isConfigured(): bool
-    {
-        return $this->token !== null;
+        return new self(route('api.health'));
     }
 
     public function path(): string

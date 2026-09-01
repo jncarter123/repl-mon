@@ -8,7 +8,6 @@ use App\Enums\CheckStatus;
 use App\Models\ReplicationAlert;
 use App\Models\ServerPair;
 use App\Services\ReplicationChecker;
-use App\Support\HealthEndpoint;
 use Flux\Flux;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\Collection;
@@ -21,7 +20,6 @@ use Throwable;
  * @property-read Collection<int, ServerPair> $pairs
  * @property-read array<string, int> $counts
  * @property-read Collection<int, ReplicationAlert> $recentAlerts
- * @property-read HealthEndpoint $health
  */
 #[Title('Replication status')]
 class Dashboard extends Component
@@ -71,18 +69,6 @@ class Dashboard extends Component
             ->latest('sent_at')
             ->limit(8)
             ->get();
-    }
-
-    /**
-     * Where an outside monitor polls this app, and the token it needs. Shown
-     * here because it is the one piece of the setup that cannot be discovered
-     * from the UI — it lives in the environment — and because a monitor nobody
-     * has pointed anything at is the state this endpoint exists to prevent.
-     */
-    #[Computed]
-    public function health(): HealthEndpoint
-    {
-        return HealthEndpoint::current();
     }
 
     public function checkNow(int $pairId, ReplicationChecker $checker): void

@@ -287,18 +287,35 @@ second way out, for Icinga or anything else that speaks HTTP:
 GET /api/health
 ```
 
-It needs a token. Without one set the route 404s — it names your pairs and their
-state, so it is not something to leave open by accident:
+It needs a token, and until one exists the route 404s — it names your pairs and
+their state, so it is not something to leave open by accident.
+
+**Generate one on the Health endpoint page**, in the sidebar. It works on the next
+request; there is nothing to restart. Give each one the name of whatever is
+going to use it, because the list is also the answer to "which of these can I
+delete?". Rotating is: generate the new one, move the checks over, delete the
+old one — both work in the meantime, so no check ever goes red for a reason
+nobody needs to investigate. Deleting the last one switches the endpoint off
+again.
+
+The list shows when each token was last polled, which is worth a glance: a token
+that has never been used is a check somebody started wiring up and did not
+finish.
+
+If you would rather keep the secret in the environment, `REPL_HEALTH_TOKEN` in
+`docker.env` still works alongside the generated ones. It is shown on the
+dashboard but cannot be rotated from there — this app does not write to its own
+environment.
 
 ```bash
-REPL_HEALTH_TOKEN=$(openssl rand -hex 24)   # docker.env, or .env
+REPL_HEALTH_TOKEN=$(openssl rand -hex 24)   # optional; the UI is easier
 ```
 
-Send it as `Authorization: Bearer …`, as `X-Health-Token: …`, or — for a check
-command that can only send a URL — as `?token=…`.
+Send whichever token as `Authorization: Bearer …`, as `X-Health-Token: …`, or —
+for a check command that can only send a URL — as `?token=…`.
 
 ```bash
-curl -sS -H "X-Health-Token: $REPL_HEALTH_TOKEN" http://localhost:8000/api/health
+curl -sS -H "X-Health-Token: $TOKEN" http://localhost:8000/api/health
 ```
 
 ```
@@ -319,7 +336,7 @@ The first line is the whole verdict, and the status code says the same thing:
 | `503` + `REPLICATION WARNING` | Lagging, never yet checked, nothing configured to watch, or a pair nobody would be emailed about. |
 | `503` + `REPLICATION CRITICAL` | Broken, unreachable, **not checked recently**, or an alert that could not be delivered. |
 | `401` | The token is wrong or missing. |
-| `404` | No token is configured, or `?pair=` names a pair that does not exist. |
+| `404` | No token exists at all, or `?pair=` names a pair that does not exist. |
 
 Lag answers 503 along with everything else, deliberately: a check that reads
 nothing but the status code has to see a replica falling behind, or the failure

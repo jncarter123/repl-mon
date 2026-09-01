@@ -109,12 +109,31 @@ Also reported, because each is a way for a real outage to go unheard: a pair
 nobody would be emailed about, an alert with a `delivery_error` inside
 `health.delivery_failure_window_minutes`, and nothing enabled to watch at all.
 
-The token is required — no `REPL_HEALTH_TOKEN`, no route (404), because the
-response names pairs and their state. A *wrong* token is 401: that one is a
-misconfigured check command and telling the two apart is worth more than the
-little it gives away. The route is outside the `web` group on purpose — no
-session, no CSRF, and never a redirect to a login page for something that only
-reads status codes.
+A token is required — none in existence, no route (404), because the response
+names pairs and their state. A *wrong* token is 401: that one is a misconfigured
+check command and telling the two apart is worth more than the little it gives
+away. The route is outside the `web` group on purpose — no session, no CSRF, and
+never a redirect to a login page for something that only reads status codes.
+
+Tokens come from two places and `HealthTokens` is the only thing that knows it:
+`REPL_HEALTH_TOKEN`, and rows in `health_tokens` issued from the Health endpoint
+page (`App\Livewire\Health\Index`, its own nav item — how this app is watched is
+a different subject from what it watches, and burying it on the dashboard is how
+it ends up never set up).
+**Several may be valid at once, on purpose** — that is what makes rotating one a
+rotation instead of an outage, and it is why the middleware asks a service
+rather than comparing against a config value. Deleting the last token switches
+the endpoint off; that is the intended way to turn it off, not a bug.
+
+Health tokens are stored `encrypted` and **are** shown in the UI, unlike every
+other secret in this app. That is deliberate: this one exists to be copied into
+a check command, possibly months later, and hashing it would make setting up a
+second checker mean rotating the one already working. It is masked until asked
+for, and it is not a credential for anybody else's server.
+
+`last_used_at` is stamped at most once a minute, and the page shows it,
+because a token that has never been polled is a check somebody started wiring up
+and did not finish — the same silence the endpoint exists to break.
 
 Keep the text body's first line a complete verdict. It is what a paging system
 quotes, and it is the string operators match on (`check_http -s`).
@@ -162,6 +181,8 @@ monitor: it looks like everything is fine.
   `PairConnectionFactory::assertSafeIdentifier()`.** The heartbeat table name is
   the only interpolated identifier in the app; it is validated in the form and
   again at the connection layer. Both locks are tested.
+- Health tokens are the one secret that **is** shown in the UI, masked, and the
+  reason is in "The health endpoint" above. Database passwords are not.
 - Passwords use the `encrypted` cast and are never sent to the browser — blank
   on the edit form means "unchanged", and clearing one takes the explicit
   `*_no_password` switch.

@@ -74,9 +74,11 @@ return [
     | the question this app cannot answer about itself from the inside: is the
     | monitor still running, and is every pair it watches healthy?
     |
-    | The token is required. Leave it unset and the route 404s — the endpoint
-    | names your pairs and their state, so it is not something to leave open by
-    | accident.
+    | A token is required. This one is optional: tokens are normally generated
+    | on the dashboard, which takes effect without a restart and can be rotated
+    | without a gap. Set this to hold the secret in the environment instead —
+    | it works alongside them. With neither, the route 404s, because the
+    | endpoint names your pairs and their state.
     |
     */
 
