@@ -164,6 +164,7 @@ Nothing secret is baked into the image: `.env` and `docker.env` are both in
 docker compose logs -f scheduler                              # what it is doing every minute
 docker compose run --rm app php artisan replication:add-user  # another operator
 docker compose run --rm app php artisan replication:test pair-name
+docker compose run --rm app php artisan replication:test-mail --to=you@example.com
 docker compose run --rm scheduler check                       # one pass, now
 docker compose up -d --build                                  # upgrade; migrations run on start
 ```
@@ -323,6 +324,94 @@ pair would have nobody to email.
 
 ---
 
+## Sending the mail
+
+Mail settings are environment, not UI — `docker.env` in a container, `.env`
+otherwise. Nothing about them is per-pair, and the app does not care which
+transport is behind them.
+
+Whatever you configure, prove it before you need it:
+
+```bash
+php artisan replication:test-mail --to=you@example.com
+# in a container:
+docker compose run --rm app php artisan replication:test-mail --to=you@example.com
+```
+
+It prints the mailer, the from address and the host or region it is about to
+use, sends one message built the same way a real alert is, and on failure
+prints the transport's own words with the credentials taken out. With no
+`--to`, it goes to the global recipient list. **A run with `MAIL_MAILER=log`
+says so** — that setting succeeds at everything except sending, which is
+exactly the failure this app exists to prevent.
+
+### Traditional SMTP
+
+```ini
+MAIL_MAILER=smtp
+MAIL_HOST=smtp.example.com
+MAIL_PORT=587
+MAIL_SCHEME=tls          # or ssl on 465; leave unset to negotiate
+MAIL_USERNAME=repl-monitor
+MAIL_PASSWORD=...
+MAIL_FROM_ADDRESS=repl-monitor@example.com
+MAIL_FROM_NAME="Repl Monitor"
+```
+
+An internal relay that accepts unauthenticated mail from the host needs neither
+`MAIL_USERNAME` nor `MAIL_PASSWORD`; `replication:test-mail` points out when
+they are empty, rather than letting it look like a mistake.
+
+### Amazon SES
+
+Two ways in, and the choice is about **credentials**, not about mail. Both send
+identically.
+
+**Over the SMTP endpoint** — nothing AWS-specific involved, just the block
+above pointed somewhere else:
+
+```ini
+MAIL_MAILER=smtp
+MAIL_HOST=email-smtp.us-east-1.amazonaws.com
+MAIL_PORT=587
+MAIL_SCHEME=tls
+MAIL_USERNAME=AKIA...          # SES *SMTP* credentials, generated in the SES
+MAIL_PASSWORD=...              # console — not your IAM access key
+```
+
+**Over the API** — `MAIL_MAILER=ses-v2`, at which point `MAIL_HOST` and the
+rest are ignored:
+
+```ini
+MAIL_MAILER=ses-v2
+AWS_DEFAULT_REGION=us-east-1
+AWS_ACCESS_KEY_ID=             # leave both blank on an instance or
+AWS_SECRET_ACCESS_KEY=         # task role — see below
+AWS_SES_CONFIGURATION_SET=     # optional
+```
+
+The API route earns its keep in exactly one situation: running on EC2 or ECS
+with an IAM role attached. Leave the key and the secret unset and the SDK signs
+with the role, so there is **no long-lived secret in the environment** for the
+one thing this app does other than watch databases. Off a role, the SMTP
+endpoint is the simpler of the two and there is no reason to prefer the API.
+
+Either way `MAIL_FROM_ADDRESS` has to be a verified SES identity, and an
+account still in the sandbox can only send to verified addresses — which will
+look exactly like a monitor that never alerts.
+
+The IAM policy the API route needs is one action:
+
+```json
+{
+  "Effect": "Allow",
+  "Action": "ses:SendEmail",
+  "Resource": "*"
+}
+```
+
+---
+
 ## Alerting
 
 Configured per pair, so a reporting replica and a payments replica do not have
@@ -441,6 +530,7 @@ for something that reads the body — `check_http` reports its own and ignores i
 | `replication:provision [pair] [--replica] [--verify-only]` | Create the heartbeat schema and table, then prove a beat gets across. |
 | `replication:install-heartbeat [pair] [--replica]` | Create just the heartbeat table, assuming the schema exists. |
 | `replication:prune` | Trim check history (default 14 days); alerts are kept a year. |
+| `replication:test-mail [--to=] [--mailer=]` | Send one message through the configured mailer and print what the transport said. |
 | `replication:add-user` | Create an operator account. |
 
 ---

@@ -33,6 +33,12 @@ return [
     |            "postmark", "resend", "log", "array",
     |            "failover", "roundrobin"
     |
+    | This app only ever sends alerts, so the two that are configured and
+    | documented are "smtp" and "ses-v2". "log" writes them to the container
+    | log instead of sending, which is a reasonable way to watch it work for a
+    | day — and a bad thing to still be set during an outage, so
+    | `replication:test-mail` says so out loud.
+    |
     */
 
     'mailers' => [
@@ -49,8 +55,30 @@ return [
             'local_domain' => env('MAIL_EHLO_DOMAIN', parse_url((string) env('APP_URL', 'http://localhost'), PHP_URL_HOST)),
         ],
 
+        // Two ways to reach SES, and the choice is about credentials rather
+        // than about mail:
+        //
+        //   smtp  — point MAIL_HOST at email-smtp.<region>.amazonaws.com with
+        //           a set of SES SMTP credentials. Needs nothing installed.
+        //   ses   — the API, below. It takes no credentials of its own when
+        //           AWS_ACCESS_KEY_ID is unset, so a container with an EC2 or
+        //           ECS task role sends without a secret in its environment.
+        //           That is the only reason to prefer it.
+        //
+        // 'ses-v2' is the current SES API and the one to use; 'ses' is the
+        // 2010 API, kept because some accounts and endpoints still want it.
         'ses' => [
             'transport' => 'ses',
+            'options' => array_filter([
+                'ConfigurationSetName' => env('AWS_SES_CONFIGURATION_SET'),
+            ]),
+        ],
+
+        'ses-v2' => [
+            'transport' => 'ses-v2',
+            'options' => array_filter([
+                'ConfigurationSetName' => env('AWS_SES_CONFIGURATION_SET'),
+            ]),
         ],
 
         'postmark' => [

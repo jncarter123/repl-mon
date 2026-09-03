@@ -9,7 +9,7 @@ use App\Mail\ReplicationAlertMail;
 use App\Models\ReplicationAlert;
 use App\Models\ReplicationCheck;
 use App\Models\ServerPair;
-use App\Support\DatabaseError;
+use App\Support\MailError;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Throwable;
@@ -47,7 +47,7 @@ class AlertDispatcher
                 Mail::to($recipient->email, $recipient->name)
                     ->send(new ReplicationAlertMail($pair, $check, $kind));
             } catch (Throwable $e) {
-                $errors[] = $recipient->email.': '.DatabaseError::describe($e);
+                $errors[] = $recipient->email.': '.MailError::describe($e);
 
                 Log::error('Replication alert delivery failed.', [
                     'server_pair_id' => $pair->getKey(),

@@ -179,6 +179,40 @@ monitor: it looks like everything is fine.
 
 ---
 
+## Mail
+
+Transport is environment only — `MAIL_MAILER` in `docker.env` or `.env`. There
+is no UI for it and there should not be: it is not per-pair, and a mail setting
+that can be edited from inside the app is one an operator can lock themselves
+out of hearing about.
+
+Two transports are configured and documented, `smtp` and `ses-v2`, plus `log`
+for a first day. **SES has two doors and the choice is about credentials, not
+mail**: its SMTP endpoint needs nothing installed, and the `ses-v2` API mailer
+exists for exactly one reason — with `AWS_ACCESS_KEY_ID` unset the SDK signs
+with an EC2/ECS role, so there is no long-lived secret in the environment.
+`aws/aws-sdk-php` is a direct dependency for that path alone. Do not remove it
+assuming the SMTP endpoint covers everything; it does not cover the role.
+
+`MailError::describe()` is the mail-side companion to `DatabaseError::describe()`
+and exists for the same rule: **never display a password**. A transport puts the
+failing conversation into the exception, and that string is stored on the alert
+row, shown on the dashboard and printed by `replication:test-mail`. It strips
+every configured mailer secret, longest first so a value containing another is
+redacted whole. `AlertDispatcher` goes through it — `DatabaseError` would not
+have caught the SMTP password, only a pair's.
+
+`replication:test-mail` is the only way to find out that mail works before an
+outage does the asking. It sends a real `TestMail` through the real transport
+and the real markdown pipeline — anything simpler proves less than nothing —
+prints the host or region it is about to use next to the failure it caused, and
+**says out loud when `MAIL_MAILER=log`**, which succeeds at everything except
+sending. With no `--to` it uses the global list, not every recipient in the
+table: a pair's own recipients were named to narrow who hears about that pair,
+and a test is not news about a pair.
+
+---
+
 ## Security
 
 - **Never log or display a database password.** `DatabaseError::describe()`
@@ -189,7 +223,8 @@ monitor: it looks like everything is fine.
   the only interpolated identifier in the app; it is validated in the form and
   again at the connection layer. Both locks are tested.
 - Health tokens are the one secret that **is** shown in the UI, masked, and the
-  reason is in "The health endpoint" above. Database passwords are not.
+  reason is in "The health endpoint" above. Database passwords are not, and
+  neither is the mailer's — see `MailError` under "Mail".
 - Passwords use the `encrypted` cast and are never sent to the browser — blank
   on the edit form means "unchanged", and clearing one takes the explicit
   `*_no_password` switch.
@@ -246,6 +281,8 @@ monitor that never checks anything.
 - **Never** widen `ReplicationEvaluator` to do I/O.
 - **Never** let provisioning grow past `CREATE ... IF NOT EXISTS` — no `DROP`, no
   `ALTER`, nothing that changes how replication itself is set up.
+- **Never** surface a mail exception without `MailError::describe()`: it is the
+  only thing standing between the SMTP password and the dashboard.
 - **Never** fold a refused `CREATE` into a fault. A denial means somebody needs to
   run a `GRANT`; the app prints it (`GrantAdvice`) rather than asking an operator
   for credentials it would then have to hold.
