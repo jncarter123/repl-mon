@@ -109,8 +109,9 @@
                     <flux:table.column>Sent</flux:table.column>
                     <flux:table.column>Pair</flux:table.column>
                     <flux:table.column>Kind</flux:table.column>
-                    <flux:table.column>Subject</flux:table.column>
+                    <flux:table.column>What happened</flux:table.column>
                     <flux:table.column>To</flux:table.column>
+                    <flux:table.column align="end"></flux:table.column>
                 </flux:table.columns>
 
                 <flux:table.rows>
@@ -129,13 +130,21 @@
                             <flux:table.cell>
                                 <flux:badge :color="$alert->kind->color()" size="sm">{{ $alert->kind->label() }}</flux:badge>
                             </flux:table.cell>
-                            <flux:table.cell class="max-w-sm truncate">{{ $alert->subject }}</flux:table.cell>
+                            <flux:table.cell class="max-w-md !whitespace-normal">
+                                {{ $alert->incidentHeadline() ?? $alert->subject }}
+                                <div class="truncate text-xs text-zinc-500 dark:text-zinc-400">
+                                    {{ $alert->first_failure_message ?? $alert->summary }}
+                                </div>
+                            </flux:table.cell>
                             <flux:table.cell>
                                 @if ($alert->delivery_error)
                                     <flux:badge color="red" size="sm" icon="exclamation-triangle">not delivered</flux:badge>
                                 @else
                                     {{ count($alert->recipients) }} recipient(s)
                                 @endif
+                            </flux:table.cell>
+                            <flux:table.cell align="end">
+                                <x-alert-detail :alert="$alert" />
                             </flux:table.cell>
                         </flux:table.row>
                     @endforeach

@@ -119,6 +119,18 @@ return [
 
     'retain_checks_days' => (int) env('REPL_RETAIN_CHECKS_DAYS', 14),
 
+    /*
+    | How far back an alert looks over the pair's own checks to describe the
+    | episode it is about. One check a minute, so the default covers a day —
+    | long enough for an outage that started before anyone was awake, and
+    | bounded so a pair that has been down for a week does not read its whole
+    | history to send one email. An episode longer than this is reported as
+    | starting at the edge of the window; it is still going, and the alert says
+    | so either way.
+    */
+
+    'incident_lookback_checks' => (int) env('REPL_INCIDENT_LOOKBACK_CHECKS', 1440),
+
     'retain_alerts_days' => (int) env('REPL_RETAIN_ALERTS_DAYS', 365),
 
 ];

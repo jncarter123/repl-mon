@@ -67,7 +67,14 @@ that will not hand out `REPLICA MONITOR`.
 - `ReplicationChecker` orchestrates: probe, evaluate, persist, transition state,
   decide whether to alert.
 - `AlertDispatcher` sends and, crucially, **records** — including when there was
-  nobody to send to.
+  nobody to send to. It also asks `IncidentSummariser` for the episode behind
+  the alert before it sends anything, so the email and the row that records it
+  tell the same story.
+- `IncidentSummary` is **pure**, like `ReplicationEvaluator`: given the pair's
+  checks newest-first and the moment of the alert, it walks back over the run of
+  failing ones and describes it. `IncidentSummariser` is the thin read that
+  feeds it — this app's own store only, never a monitored server, because it
+  runs while an outage is in progress.
 - `HeartbeatProvisioner` **acts and reports**: it creates the heartbeat schema
   and table and then proves a beat crosses. It decides nothing about alerting and
   writes no models. It assumes replication is already configured — it issues no
@@ -161,6 +168,44 @@ monitor becoming a mail folder people filter away:
 Pausing a pair clears `alerting`, `consecutive_failures` and `failing_since`, so
 a pair switched off mid-outage does not fire a recovery email when it is
 switched back on.
+
+## What an alert says happened
+
+Every alert carries the episode behind it — started, duration, failed checks,
+the statuses seen, the worst lag, the first failing check's message, and the
+replica's own error text if there was one.
+
+**The episode is rebuilt from the check history, never from `failing_since`.**
+By the time a recovery alert is sent, `applyState()` has already cleared that
+column — and the recovery is exactly the alert that most needs the story, since
+the check it points at is the healthy one. So `IncidentSummary::fromChecks()`
+skips leading healthy checks and takes the run of failing ones immediately
+before them. Bounded by `replication.incident_lookback_checks`.
+
+**It is copied onto the alert row, not looked up on demand.** Checks are pruned
+after `retain_checks_days` and alerts are kept for `retain_alerts_days`; the
+question being answered is "what was that, last month?". Alerts written before
+this existed have `incident_started_at` null, and `hasIncident()` is what the UI
+asks — it says so plainly rather than rendering a row of dashes that reads like
+nothing happened.
+
+**`incident_truncated` is the honesty valve.** A start is exact only when a
+healthy check sits immediately before the run; with none — pruned history, the
+lookback exhausted, or a pair that was already failing when it was added —
+`IncidentSummary::$startedBeforeWindow` is set and every rendering says "at
+least" and "at or before". Do not drop it to make a subject line read more
+crisply: the edge of what we can see is not the moment the outage began.
+
+`replication:backfill-alerts` reconstructs episodes for alerts sent before any
+of this existed, and repairs the record after a restore or a widened lookback.
+It writes only the incident columns — **never `subject`, `summary` or
+`recipients`**, which are the record of what was actually sent. Rewriting those
+would turn the one trustworthy part of an alert into a reconstruction.
+
+**A recovery subject carries the outage** (`recovered — Broken for 22m`) because
+that is the part a phone shows. **A problem subject does not change**, so
+reminders still thread with the first email and existing mail filters keep
+working.
 
 ---
 
@@ -275,6 +320,9 @@ monitor that never checks anything.
 - **Never** let a single pair's failure abort the run for the rest.
 - **Never** treat a missing `REPLICA MONITOR` grant as an outage.
 - **Never** send an alert without recording it.
+- **Never** let a recovery alert say only that things are fine. Its own check is
+  the healthy one; without the episode it is a line nobody can read the next
+  morning.
 - **Never** let the health endpoint touch a monitored server, or answer 200 on
   anything but a healthy, freshly-checked list.
 - **Never** put business logic in a Livewire component or a Blade view.

@@ -196,3 +196,103 @@ it('keeps the state that drives the dashboard on the pair itself', function () {
         ->and($pair->failing_since)->not->toBeNull()
         ->and($pair->last_ok_at)->toBeNull();
 });
+
+it('records what the outage was on the recovery alert, whose own check is the healthy one', function () {
+    $this->freezeSecond();
+
+    $pair = ServerPair::factory()->create(['failures_before_alert' => 1, 'realert_after_minutes' => 0]);
+
+    probing(lagging());
+    app(ReplicationChecker::class)->check($pair);
+
+    $this->travel(1)->minutes();
+    probing(broken());
+    app(ReplicationChecker::class)->check($pair->fresh());
+
+    $this->travel(1)->minutes();
+    probing(healthy());
+    app(ReplicationChecker::class)->check($pair->fresh());
+
+    $recovery = ReplicationAlert::query()->latest('id')->first();
+
+    expect($recovery->kind)->toBe(AlertKind::Recovery)
+        // The healthy check it points at says everything is fine; these say what
+        // the night looked like.
+        ->and($recovery->status)->toBe(CheckStatus::Ok)
+        ->and($recovery->worst_status)->toBe(CheckStatus::Broken)
+        ->and($recovery->failed_checks)->toBe(2)
+        ->and($recovery->incident_duration_seconds)->toBe(120)
+        ->and($recovery->peak_lag_seconds)->toBe(900.0)
+        ->and($recovery->first_failure_message)->toContain('behind the primary')
+        ->and($recovery->status_counts)->toBe(['broken' => 1, 'lagging' => 1])
+        // The pair's history opens with the outage — nothing healthy before it —
+        // so the monitor says how long it saw, not how long it was.
+        ->and($recovery->incident_truncated)->toBeTrue()
+        ->and($recovery->incidentHeadline())->toBe('Broken for at least 2m — 2 failed checks')
+        ->and($recovery->subject)->toBe("[{$pair->name}] Replication recovered — Broken for at least 2m");
+});
+
+it('carries the episode on a problem alert too, so a reminder says how long it has been', function () {
+    $this->freezeSecond();
+
+    $pair = ServerPair::factory()->create(['failures_before_alert' => 1, 'realert_after_minutes' => 30]);
+
+    probing(broken());
+    app(ReplicationChecker::class)->check($pair);
+
+    $this->travel(31)->minutes();
+    app(ReplicationChecker::class)->check($pair->fresh());
+
+    $reminder = ReplicationAlert::query()->latest('id')->first();
+
+    expect($reminder->kind)->toBe(AlertKind::Problem)
+        ->and($reminder->failed_checks)->toBe(2)
+        ->and($reminder->incident_duration_seconds)->toBe(31 * 60)
+        ->and($reminder->incidentHeadline())->toBe('Broken for at least 31m — 2 failed checks')
+        // A reminder's subject stays stable, so it threads with the first email.
+        ->and($reminder->subject)->toBe("[{$pair->name}] Replication Broken");
+});
+
+it('puts the outage in the email a sleeping operator will read in the morning', function () {
+    $this->freezeSecond();
+
+    $pair = ServerPair::factory()->create(['failures_before_alert' => 1]);
+
+    probing(broken());
+    app(ReplicationChecker::class)->check($pair);
+
+    $this->travel(4)->minutes();
+    probing(healthy());
+    app(ReplicationChecker::class)->check($pair->fresh());
+
+    Mail::assertSent(ReplicationAlertMail::class, function (ReplicationAlertMail $mail) {
+        if ($mail->kind !== AlertKind::Recovery) {
+            return false;
+        }
+
+        $body = $mail->render();
+
+        return str_contains($body, 'What happened')
+            && str_contains($body, 'Broken for at least 4m')
+            && str_contains($body, 'Replication threads are not both running');
+    });
+});
+
+it('leaves the incident columns empty when there is no episode to describe', function () {
+    $pair = ServerPair::factory()->create(['failures_before_alert' => 1]);
+
+    // A recovery alert is only sent for a pair that was alerting, so force the
+    // one case where the dispatcher is handed a healthy check with no history
+    // behind it: everything it could say would be invented.
+    $pair->forceFill(['alerting' => true])->save();
+
+    probing(healthy());
+    app(ReplicationChecker::class)->check($pair);
+
+    $alert = ReplicationAlert::query()->sole();
+
+    expect($alert->kind)->toBe(AlertKind::Recovery)
+        ->and($alert->hasIncident())->toBeFalse()
+        ->and($alert->incidentHeadline())->toBeNull()
+        ->and($alert->subject)->toBe("[{$pair->name}] Replication recovered");
+});

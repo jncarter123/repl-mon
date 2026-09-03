@@ -5,12 +5,34 @@
 # {{ $kind === AlertKind::Recovery ? 'Replication recovered' : 'Replication problem' }}
 
 @if ($kind === AlertKind::Recovery)
-**{{ $pair->name }}** is replicating normally again.
+**{{ $pair->name }}** is replicating normally again{{ $incident ? ' after ' . $incident->duration() . ' ' . strtolower($incident->worstStatus->label()) : '' }}.
 @else
 **{{ $pair->name }}** is reporting **{{ $check->status->label() }}**.
 @endif
 
 {{ $check->message }}
+
+@if ($incident)
+<x-mail::panel>
+**What happened**
+
+{{ $incident->headline() }}, {{ $incident->startedBeforeWindow ? 'already going by' : 'starting' }} {{ $incident->startedAt->toDayDateTimeString() }} UTC.
+
+_First failing check:_ {{ $incident->firstFailureMessage }}
+@if (count($incident->statusCounts) > 1)
+
+_Seen during the episode:_ {{ $incident->statusBreakdown() }}
+@endif
+@if ($incident->peakLagSeconds !== null)
+
+_Worst lag measured:_ {{ Duration::humanize($incident->peakLagSeconds) }}
+@endif
+@if ($incident->replicaError)
+
+_Replica reported:_ {{ $incident->replicaError }}
+@endif
+</x-mail::panel>
+@endif
 
 <x-mail::table>
 | | |
@@ -26,9 +48,13 @@
 | Seconds_Behind_Source | {{ $check->seconds_behind_source }} |
 @endif
 | Checked at | {{ $check->checked_at?->toDayDateTimeString() }} UTC |
+@if ($incident)
+| Failing since | {{ $incident->startedBeforeWindow ? 'at or before ' : '' }}{{ $incident->startedAt->toDayDateTimeString() }} UTC ({{ $incident->duration() }}) |
+| Failed checks | {{ $incident->failedChecks }} |
+@endif
 </x-mail::table>
 
-@if ($check->replica_error)
+@if ($check->replica_error && $check->replica_error !== $incident?->replicaError)
 <x-mail::panel>
 **Last replica error**
 

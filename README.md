@@ -431,6 +431,56 @@ Every email is recorded — subject, recipients, and any delivery failure — on
 pair's page and on the dashboard. An alert nobody can prove was sent is the same
 as no alert.
 
+### What the alert says happened
+
+Every alert also carries the episode behind it, worked out from the pair's own
+check history at the moment the email goes out:
+
+- when it started, and how long it had been going;
+- how many checks failed, and what they said (`Broken ×20, Lagging ×2`);
+- the worst lag measured while it lasted;
+- the message from the *first* failing check — the symptom, before it turned
+  into something else;
+- whatever the replica itself reported, if `SHOW REPLICA STATUS` carried an
+  error.
+
+This matters most for the recovery email, whose own check is the healthy one:
+without it, a problem that started at 02:14 and fixed itself by 02:36 arrives as
+"Replication recovered" and nothing else. The subject line carries it too —
+*Replication recovered — Broken for 22m* — because that is the part a phone
+shows. Problem emails keep their subject unchanged so reminders still thread
+with the first one.
+
+Press **Details** on any row of either alerts table to see the whole thing. It
+is copied onto the alert row rather than looked up on demand: checks are pruned
+after a fortnight and alerts are kept for a year, and "what was that, last
+month?" is exactly the question being answered.
+
+**When it says "at least".** The start is only exact when a healthy check sits
+immediately before the run. If there is none — the history was pruned, the
+lookback ran out, or the pair was already failing when it was added — the alert
+says *at least 22m* and *at or before 02:14*, because the alternative is
+reporting the edge of what the monitor can see as the moment the outage began.
+
+### Filling in alerts that were sent before this
+
+```bash
+php artisan replication:backfill-alerts --dry-run   # what it would write
+php artisan replication:backfill-alerts            # write it
+php artisan replication:backfill-alerts payments   # one pair
+```
+
+It rebuilds each alert's episode from whatever check history has survived, and
+prints which alerts it could not reconstruct and why — an alert older than the
+check-history window has nothing left to read. `--all` redoes alerts that
+already carry detail, for after a restore or after widening the lookback.
+
+It never touches `subject`, `summary` or `recipients`: those are the record of
+what was actually sent that night, and a backfill that rewrites them turns the
+one trustworthy part of an alert into a reconstruction. So an old recovery
+still has its plain *Replication recovered* subject; the detail appears
+everywhere else.
+
 ---
 
 ## Watching the monitor
@@ -530,6 +580,7 @@ for something that reads the body — `check_http` reports its own and ignores i
 | `replication:provision [pair] [--replica] [--verify-only]` | Create the heartbeat schema and table, then prove a beat gets across. |
 | `replication:install-heartbeat [pair] [--replica]` | Create just the heartbeat table, assuming the schema exists. |
 | `replication:prune` | Trim check history (default 14 days); alerts are kept a year. |
+| `replication:backfill-alerts [pair] [--all] [--dry-run]` | Reconstruct the outage behind past alerts from the surviving check history. |
 | `replication:test-mail [--to=] [--mailer=]` | Send one message through the configured mailer and print what the transport said. |
 | `replication:add-user` | Create an operator account. |
 
@@ -545,6 +596,8 @@ for something that reads the body — `check_http` reports its own and ignores i
 - The heartbeat table name is validated as a plain identifier in the form *and*
   again at the connection layer, because it is interpolated into SQL where no
   placeholder is possible.
+- An alert keeps its own copy of the outage it was about, so the record survives
+  the check history being pruned out from under it.
 - Deleting a pair takes its history and its own recipients with it. The
   heartbeat row on your primary is left where it is — deleting from your
   database is not this app's call to make.
