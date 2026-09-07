@@ -43,7 +43,13 @@ services:
     # The image healthcheck curls /up; this role serves nothing. Ask the only
     # question that matters about it instead: is the minute loop still alive?
     healthcheck:
-      test: ["CMD-SHELL", "pgrep -f 'schedule:work' >/dev/null || exit 1"]
+      # The character class is load-bearing. pgrep -f matches whole command
+      # lines, and the healthcheck's own `sh -c "pgrep -f 'schedule:work' ..."`
+      # is a command line containing the pattern, so the unbracketed form finds
+      # itself and reports healthy in a container with no scheduler in it at
+      # all. '[s]chedule:work' still matches the real process and no longer
+      # matches the shell asking the question.
+      test: ["CMD-SHELL", "pgrep -f '[s]chedule:work' >/dev/null || exit 1"]
       interval: 30s
       timeout: 5s
       start_period: 20s

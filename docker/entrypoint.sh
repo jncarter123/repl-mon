@@ -71,6 +71,16 @@ case "${role}" in
         exec frankenphp run --config /app/docker/Caddyfile
         ;;
     scheduler)
+        # A stranded withoutOverlapping mutex is the difference between a missed
+        # minute and a blind ten. The foreground event releases it on SIGTERM
+        # (see routes/console.php), but nothing in-process can catch a SIGKILL
+        # or an OOM kill, and the lock then holds replication:check off for the
+        # rest of its TTL — which is exactly how a restart turns a hung check
+        # into ten minutes of silence. Clearing on the way up costs one query
+        # and can only ever be right: none of our events are running yet.
+        php artisan schedule:clear-cache \
+            || echo "repl-monitor: schedule:clear-cache failed; a stale mutex may delay the first check" >&2
+
         exec php artisan schedule:work
         ;;
     check)

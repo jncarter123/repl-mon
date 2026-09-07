@@ -311,6 +311,49 @@ monitor that never checks anything.
   reason — nothing queues, and a queued alert with no worker is a lost one.
 - Assets build on Debian, not Alpine: `package.json` pins `*-linux-x64-gnu`
   binaries. The CSS build needs `vendor/` — `app.css` imports Flux from it.
+- The scheduler role clears stale mutexes (`schedule:clear-cache`) before
+  `schedule:work`. See below for why that line is not tidy-up.
+- The scheduler's healthcheck pattern is `'[s]chedule:work'`. The character
+  class is load-bearing: `pgrep -f` matches whole command lines, and the
+  healthcheck's own `sh -c` contains the pattern, so the unbracketed form finds
+  itself and reports healthy in a container with no scheduler in it at all.
+
+---
+
+## The minute loop
+
+`routes/console.php`. Two rules, both learned from an outage where the monitor
+went silent for ten minutes and the container log could not say so.
+
+**The check does not run in the background, and `runInBackground()` must not be
+added back.** It looks like the obvious thing for a per-minute job and it breaks
+two separate mechanisms:
+
+- It builds `(check > /dev/null 2>&1 ; schedule:finish "$?") > /dev/null 2>&1 &`.
+  Every descriptor there is `/dev/null`, including the one `LOG_CHANNEL=stderr`
+  writes to — so a check that died on its first line and a check that cleared
+  every pair produce identical container logs, and the `Log::warning` for a pair
+  with nobody to email goes nowhere. In the foreground the after-callbacks run
+  inside `schedule:run`, whose stderr is the pipe `schedule:work` copies out.
+- `Event::ensureMutexIsReleasedOnSignal()` returns early on
+  `$this->runInBackground`, and the lock is released by a separate
+  `schedule:finish` process instead. Stop the container mid-check and that
+  process never runs: `withoutOverlapping(10)` then holds the next check off
+  until the TTL expires, and the monitor is blind for the rest of the ten
+  minutes. In the foreground, pcntl catches the SIGTERM and drops the lock.
+
+The cost is that `schedule:run` waits for the check. That is fine:
+`schedule:work` starts an independent `schedule:run` every minute regardless,
+and `withoutOverlapping` is what stops those stacking.
+`tests/Feature/ScheduleTest.php` pins all of it, because every one of these
+failures is invisible until an outage goes unreported.
+
+**Both commands report their failures.** `onFailure(fn (Stringable $output))`
+captures the output and logs it. Without it the only evidence a check ever ran
+is `schedule:run` saying it spawned a shell, which it says just as cheerfully
+for a command that throws. `schedule:clear-cache` in the entrypoint covers the
+case pcntl cannot: a `SIGKILL` or an OOM kill leaves the mutex stranded, and
+clearing on the way up is only ever right — none of our events are running yet.
 
 ---
 
@@ -334,3 +377,8 @@ monitor that never checks anything.
 - **Never** fold a refused `CREATE` into a fault. A denial means somebody needs to
   run a `GRANT`; the app prints it (`GrantAdvice`) rather than asking an operator
   for credentials it would then have to hold.
+- **Never** add `runInBackground()` to a scheduled command in this app. It sends
+  the log channel to `/dev/null` and opts the mutex out of signal release — see
+  "The minute loop".
+- **Never** schedule a command without an `onFailure`. A monitor whose own jobs
+  can fail quietly is the thing this app exists to stop happening elsewhere.
